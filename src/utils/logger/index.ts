@@ -31,13 +31,17 @@ export type LogLevel = 'error' | 'warn' | 'info' | 'verbose' | 'debug' | 'silly'
  * never turns into a multi-kilobyte log line.
  */
 export function safeStringify(value: unknown): string {
-  return inspect(value, {
-    depth: 4,
-    maxArrayLength: 50,
-    maxStringLength: 1000,
-    breakLength: Infinity,
-    compact: true,
-  });
+  try {
+    return inspect(value, {
+      depth: 4,
+      maxArrayLength: 50,
+      maxStringLength: 1000,
+      breakLength: Infinity,
+      compact: true,
+    });
+  } catch {
+    return '[Uninspectable value]';
+  }
 }
 
 /**

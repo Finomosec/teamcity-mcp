@@ -8,3 +8,9 @@ export const isReadableStream = (value: unknown): value is NodeJS.ReadableStream
   value !== null &&
   typeof (value as { pipe?: unknown }).pipe === 'function' &&
   typeof (value as { on?: unknown }).on === 'function';
+
+export const discardStreamBody = (value: unknown): void => {
+  if (isReadableStream(value)) {
+    value.resume();
+  }
+};

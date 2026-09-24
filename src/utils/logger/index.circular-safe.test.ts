@@ -1,3 +1,6 @@
+import { inspect } from 'util';
+import type { Logger } from 'winston';
+
 import { createLogger, safeStringify } from './index';
 
 /**
@@ -28,11 +31,37 @@ describe('TeamCityLogger circular-safe metadata', () => {
     expect(output).toContain('more characters');
   });
 
-  it('does not throw when logging circular metadata', () => {
-    const logger = createLogger({ enableConsole: false, enableFile: false, level: 'info' });
+  it('falls back when a custom inspect hook throws', () => {
+    const hostile = {
+      [inspect.custom]: () => {
+        throw new Error('boom');
+      },
+    };
 
-    expect(() =>
-      logger.info('streaming response completed', { socket: createCircular() })
-    ).not.toThrow();
+    expect(safeStringify(hostile)).toBe('[Uninspectable value]');
+  });
+
+  it('formats circular metadata through the console transport', () => {
+    const logger = createLogger({ enableConsole: true, enableFile: false, level: 'info' });
+    const [consoleTransport] = (logger as unknown as { winston: Logger }).winston.transports;
+    const info = {
+      level: 'info',
+      message: 'streaming response completed',
+      service: 'teamcity-mcp',
+      socket: createCircular(),
+      [Symbol.for('level')]: 'info',
+    };
+
+    const formatted = consoleTransport?.format?.transform(info) as
+      | Record<symbol, unknown>
+      | false
+      | undefined;
+    const output =
+      formatted !== false && formatted !== undefined
+        ? String(formatted[Symbol.for('message')])
+        : '';
+
+    expect(output).toContain('streaming response completed');
+    expect(output).toContain('[Circular *1]');
   });
 });

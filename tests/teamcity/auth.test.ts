@@ -283,9 +283,12 @@ describe('TeamCity Authentication Utilities', () => {
       } as unknown as AxiosError;
 
       await expect(logAndTransformError(axiosError)).rejects.toEqual(
-        expect.objectContaining({ requestId: 'test-stream', statusCode: 404 })
+        expect.objectContaining({
+          requestId: 'test-stream',
+          statusCode: 404,
+          details: 'Build not found (id:999)',
+        })
       );
-      expect(axiosError.response?.data).toBe('Build not found (id:999)');
     });
 
     it('truncates a streamed error body to 64 KB', async () => {
@@ -296,8 +299,12 @@ describe('TeamCity Authentication Utilities', () => {
         message: 'Request failed with status code 500',
       } as unknown as AxiosError;
 
-      await expect(logAndTransformError(axiosError)).rejects.toBeDefined();
-      expect(axiosError.response?.data).toHaveLength(64 * 1024);
+      const rejection = logAndTransformError(axiosError);
+      await expect(rejection).rejects.toEqual(
+        expect.objectContaining({ requestId: 'test-large', statusCode: 500 })
+      );
+      const { details } = (await rejection.catch((e: unknown) => e)) as { details?: string };
+      expect(details).toHaveLength(64 * 1024);
     });
 
     it('drops a streamed error body that fails while draining', async () => {
@@ -313,9 +320,8 @@ describe('TeamCity Authentication Utilities', () => {
       } as unknown as AxiosError;
 
       await expect(logAndTransformError(axiosError)).rejects.toEqual(
-        expect.objectContaining({ requestId: 'test-broken', statusCode: 502 })
+        expect.objectContaining({ requestId: 'test-broken', statusCode: 502, details: undefined })
       );
-      expect(axiosError.response?.data).toBeUndefined();
     });
   });
 });

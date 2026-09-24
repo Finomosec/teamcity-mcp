@@ -15,6 +15,7 @@ import {
 import { TeamCityAPIError, isRetryableError } from '@/teamcity/errors';
 import type { TeamCityApiSurface } from '@/teamcity/types/client';
 import { toBuildLocator } from '@/teamcity/utils/build-locator';
+import { discardStreamBody } from '@/teamcity/utils/stream';
 import { info } from '@/utils/logger';
 
 import { AgentApi } from './teamcity-client/api/agent-api';
@@ -151,6 +152,7 @@ export class TeamCityAPI {
     // Configure retry with exponential backoff and error classification
     axiosRetry(this.axiosInstance, {
       retries: 3,
+      onRetry: (_retryCount, error) => discardStreamBody(error.response?.data),
       retryDelay: (retryCount, error) => {
         const reqId = (error?.config as { requestId?: string } | undefined)?.requestId;
         const tcError = TeamCityAPIError.fromAxiosError(error, reqId);
