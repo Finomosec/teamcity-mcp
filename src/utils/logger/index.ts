@@ -30,7 +30,7 @@ export type LogLevel = 'error' | 'warn' | 'info' | 'verbose' | 'debug' | 'silly'
  * bounds depth / array / string length so a huge object graph (like a socket)
  * never turns into a multi-kilobyte log line.
  */
-function safeStringify(value: unknown): string {
+export function safeStringify(value: unknown): string {
   return inspect(value, {
     depth: 4,
     maxArrayLength: 50,

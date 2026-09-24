@@ -7,6 +7,7 @@ import {
   AxiosHeaders as Headers,
   type InternalAxiosRequestConfig,
 } from 'axios';
+import { Readable } from 'stream';
 
 import {
   addRequestId,
@@ -271,6 +272,50 @@ describe('TeamCity Authentication Utilities', () => {
           statusCode: 500,
         })
       );
+    });
+
+    it('drains a streamed error body into a bounded text snapshot', async () => {
+      const body = Readable.from([Buffer.from('Build not found'), ' (id:999)']);
+      const axiosError = {
+        config: { requestId: 'test-stream' },
+        response: { status: 404, data: body },
+        message: 'Request failed with status code 404',
+      } as unknown as AxiosError;
+
+      await expect(logAndTransformError(axiosError)).rejects.toEqual(
+        expect.objectContaining({ requestId: 'test-stream', statusCode: 404 })
+      );
+      expect(axiosError.response?.data).toBe('Build not found (id:999)');
+    });
+
+    it('truncates a streamed error body to 64 KB', async () => {
+      const chunk = Buffer.alloc(40 * 1024, 'a');
+      const axiosError = {
+        config: { requestId: 'test-large' },
+        response: { status: 500, data: Readable.from([chunk, chunk, chunk]) },
+        message: 'Request failed with status code 500',
+      } as unknown as AxiosError;
+
+      await expect(logAndTransformError(axiosError)).rejects.toBeDefined();
+      expect(axiosError.response?.data).toHaveLength(64 * 1024);
+    });
+
+    it('drops a streamed error body that fails while draining', async () => {
+      const body = new Readable({
+        read() {
+          this.destroy(new Error('socket hang up'));
+        },
+      });
+      const axiosError = {
+        config: { requestId: 'test-broken' },
+        response: { status: 502, data: body },
+        message: 'Request failed with status code 502',
+      } as unknown as AxiosError;
+
+      await expect(logAndTransformError(axiosError)).rejects.toEqual(
+        expect.objectContaining({ requestId: 'test-broken', statusCode: 502 })
+      );
+      expect(axiosError.response?.data).toBeUndefined();
     });
   });
 });

@@ -86,9 +86,13 @@ describe('TeamCityAPI unified surface', () => {
     const response = await api.downloadBuildLog('123', { responseType: 'stream' });
 
     expect(getSpy).toHaveBeenCalledTimes(1);
-    const [url, config] = getSpy.mock.calls[0] as [string, { params?: Record<string, unknown> }];
+    const [url, config] = getSpy.mock.calls[0] as [
+      string,
+      { params?: Record<string, unknown>; responseType?: string },
+    ];
     expect(url).toBe('/downloadBuildLog.html');
     expect(config?.params).toMatchObject({ buildId: '123' });
+    expect(config?.responseType).toBe('stream');
     expect(response.data).toBe('log contents');
   });
 
