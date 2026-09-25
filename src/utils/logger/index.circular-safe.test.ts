@@ -52,6 +52,9 @@ describe('TeamCityLogger circular-safe metadata', () => {
       [Symbol.for('level')]: 'info',
     };
 
+    expect(() =>
+      logger.info('streaming response completed', { socket: createCircular() })
+    ).not.toThrow();
     const formatted = consoleTransport?.format?.transform(info) as
       | Record<symbol, unknown>
       | false

@@ -1,4 +1,5 @@
 import type { AxiosResponse, InternalAxiosRequestConfig } from 'axios';
+import { Readable } from 'stream';
 
 import { TeamCityAPI, TeamCityAPIClientConfig } from '@/api-client';
 import type { Build } from '@/teamcity-client/models/build';
@@ -94,6 +95,54 @@ describe('TeamCityAPI unified surface', () => {
     expect(config?.params).toMatchObject({ buildId: '123' });
     expect(config?.responseType).toBe('stream');
     expect(response.data).toBe('log contents');
+  });
+
+  it('applies start/count locally to the .html endpoint response', async () => {
+    const api = TeamCityAPI.getInstance(baseConfig);
+    const getSpy = jest
+      .spyOn(api.http, 'get')
+      .mockResolvedValue(createAxiosResponse<string>('l0\nl1\nl2\nl3\n'));
+
+    const response = await api.downloadBuildLog('123', { params: { start: 1, count: 2 } });
+
+    const [, config] = getSpy.mock.calls[0] as [string, { params?: Record<string, unknown> }];
+    expect(config?.params).toEqual({ buildId: '123' });
+    expect(response.data).toBe('l1\nl2');
+  });
+
+  it('streams only the requested line range from the .html endpoint', async () => {
+    const api = TeamCityAPI.getInstance(baseConfig);
+    jest
+      .spyOn(api.http, 'get')
+      .mockResolvedValue(createAxiosResponse<Readable>(Readable.from(['l0\nl1', '\nl2\nl3\n'])));
+
+    const response = await api.downloadBuildLog<Readable>('123', {
+      params: { start: 1, count: 2 },
+      responseType: 'stream',
+    });
+
+    const chunks: Buffer[] = [];
+    for await (const chunk of response.data) {
+      chunks.push(Buffer.from(chunk as Buffer));
+    }
+    expect(Buffer.concat(chunks).toString()).toBe('l1\nl2\n');
+  });
+
+  it('forwards start/count to the REST fallback', async () => {
+    const api = TeamCityAPI.getInstance(baseConfig);
+    const getSpy = jest
+      .spyOn(api.http, 'get')
+      .mockRejectedValueOnce(new Error('404'))
+      .mockResolvedValueOnce(createAxiosResponse<string>('l1\nl2'));
+
+    const response = await api.downloadBuildLog('123', { params: { start: 1, count: 2 } });
+
+    const [, fallbackConfig] = getSpy.mock.calls[1] as [
+      string,
+      { params?: Record<string, unknown> },
+    ];
+    expect(fallbackConfig?.params).toEqual({ start: 1, count: 2, plain: true });
+    expect(response.data).toBe('l1\nl2');
   });
 
   it('falls back to the REST log endpoint when .html fails', async () => {

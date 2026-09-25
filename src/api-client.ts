@@ -15,7 +15,7 @@ import {
 import { TeamCityAPIError, isRetryableError } from '@/teamcity/errors';
 import type { TeamCityApiSurface } from '@/teamcity/types/client';
 import { toBuildLocator } from '@/teamcity/utils/build-locator';
-import { discardStreamBody } from '@/teamcity/utils/stream';
+import { discardStreamBody, isReadableStream, sliceStreamLines } from '@/teamcity/utils/stream';
 import { info } from '@/utils/logger';
 
 import { AgentApi } from './teamcity-client/api/agent-api';
@@ -72,6 +72,26 @@ const extractRetryAfterMilliseconds = (value: unknown): number | undefined => {
   }
 
   return undefined;
+};
+
+const toOptionalLineNumber = (value: unknown): number | undefined => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : undefined;
+};
+
+const sliceLogData = (data: unknown, startLine: number, lineCount?: number): unknown => {
+  if (isReadableStream(data)) {
+    return sliceStreamLines(data, startLine, lineCount);
+  }
+  if (typeof data === 'string') {
+    const lines = data.split('\n');
+    const end = lineCount === undefined ? undefined : startLine + lineCount;
+    return lines.slice(startLine, end).join('\n');
+  }
+  return data;
 };
 
 interface NormalizedClientConfig {
@@ -491,16 +511,23 @@ export class TeamCityAPI {
     // and works with responseType 'stream' too. This is the only endpoint
     // JetBrains documents for log download; the REST `/builds/{id}/log` path is
     // undocumented and returns 404 on many server versions (it reports
-    // "Field 'log' is not supported"). Any line-range params (start/count) are
-    // forwarded but only honored by the REST fallback below.
+    // "Field 'log' is not supported"). It ignores line ranges, so start/count
+    // are applied locally to its response.
+    const { start, count, ...primaryParams } = rawParams ?? {};
+    const startLine = toOptionalLineNumber(start);
+    const lineCount = toOptionalLineNumber(count);
     try {
-      return await this.axiosInstance.get<T>(`/downloadBuildLog.html`, {
+      const response = await this.axiosInstance.get<T>(`/downloadBuildLog.html`, {
         ...options,
-        params: { ...(rawParams ?? {}), buildId },
+        params: { ...primaryParams, buildId },
         headers,
         responseType,
         transformResponse,
       });
+      if (startLine === undefined && lineCount === undefined) {
+        return response;
+      }
+      return { ...response, data: sliceLogData(response.data, startLine ?? 0, lineCount) as T };
     } catch {
       // Fallback: the undocumented REST log endpoint, present on some server
       // configurations. Uses plain=true and a build locator in the path.
